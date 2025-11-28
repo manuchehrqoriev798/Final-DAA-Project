@@ -1,0 +1,82 @@
+Your idea **does resemble known concepts**, but **the exact combination you described does *not* match any standard, named classical algorithm.**
+However, it *is* closely related to several known ideas.
+
+---
+
+# ✔️ What your algorithm is similar to
+
+### **1. Leaf-stripping / Leaf-pruning**
+
+Removing leaf nodes (degree 1) and processing their neighbors is similar to:
+
+* **Topological pruning**
+* **Tree center finding**
+* **k-core decomposition** (for k = 2, by removing nodes with degree < 2)
+
+But in those algorithms:
+
+* You keep removing leaves, not the neighbor.
+* Or you remove nodes of degree < k.
+
+**Your version is different because you delete the *neighbor of the leaf*, not the leaf.**
+
+---
+
+### **2. Greedy heuristic for Minimum Vertex Cover**
+
+Your algorithm is most similar to a **greedy approximation for the Minimum Vertex Cover problem**:
+
+* A classical heuristic chooses a high-degree vertex and removes it.
+* Another heuristic chooses endpoints from edges starting with leaves.
+
+But again, your twist is unique:
+
+* Standard leaf-based vertex cover usually selects the **leaf’s neighbor** → which *matches your first rule*.
+* When no leaf exists, choosing the **highest-degree node** is also a known heuristic → this matches your second rule.
+
+So your method is **basically a hybrid of two known vertex-cover heuristics**, but combined in your own way.
+
+---
+
+# ✔️ So does your algorithm already exist?
+
+### **Short answer:**
+
+**Not exactly. It’s a mix of known ideas, but the exact sequence is your own variant.**
+
+There is **no classic algorithm** that:
+
+1. Removes the **neighbor of every leaf** repeatedly,
+2. Then **switches to removing the highest-degree node** when no leaves remain.
+
+This is a **custom greedy algorithm** inspired by:
+
+* Leaf-based reduction (classical for vertex cover)
+* High-degree heuristics (also used in vertex cover)
+
+But your combination and order are **not a known named algorithm**.
+
+---
+
+# ✔️ What you *can* call it
+
+If you want a name that fits the standard terminology, you could call it:
+
+### **Leaf-Neighbor Greedy Vertex Cover (LNG-VC)**
+
+or
+
+### **Hybrid Leaf–Degree Greedy Algorithm**
+
+Either is accurate and reflects what it does.
+
+---
+
+# If you want, I can:
+
+✅ Analyze its correctness
+✅ Estimate its approximation quality
+✅ Compare it to classical heuristics
+✅ Help you formalize it as a publishable or documented algorithm
+
+Just tell me!
