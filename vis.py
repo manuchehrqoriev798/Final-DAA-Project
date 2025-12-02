@@ -11,6 +11,15 @@ import networkx as nx
 import numpy as np
 from collections import defaultdict
 import time
+import os
+import sys
+import glob
+
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
 
 # Color scheme
 COLOR_VERTEX_NORMAL = '#4A90E2'      # Blue
@@ -20,6 +29,120 @@ COLOR_VERTEX_REMOVED = '#D3D3D3'     # Gray (removed)
 COLOR_EDGE_NORMAL = '#9B9B9B'        # Gray
 COLOR_EDGE_COVERED = '#50C878'       # Green (covered by vertex cover)
 COLOR_EDGE_REMOVED = '#FF6B6B'       # Red (removed)
+
+
+def read_graph_from_txt(filepath):
+    """Read graph from .txt file (edge list format)"""
+    edges = []
+    vertices = set()
+    
+    with open(filepath, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                u, v = int(parts[0]), int(parts[1])
+                if u != v:  # Skip self-loops
+                    edges.append((u, v))
+                    vertices.add(u)
+                    vertices.add(v)
+    
+    return edges, vertices
+
+
+def read_graph_from_xlsx(filepath):
+    """Read graph from .xlsx file (edge list format)"""
+    if not HAS_PANDAS:
+        raise ImportError("pandas is required to read .xlsx files")
+    
+    df = pd.read_excel(filepath, header=None)
+    edges = []
+    vertices = set()
+    
+    for _, row in df.iterrows():
+        if len(row) >= 2 and pd.notna(row[0]) and pd.notna(row[1]):
+            u, v = int(row[0]), int(row[1])
+            if u != v:  # Skip self-loops
+                edges.append((u, v))
+                vertices.add(u)
+                vertices.add(v)
+    
+    return edges, vertices
+
+
+def load_benchmark_graph(filepath=None, benchmark_name=None, use_example=False):
+    """
+    Load a graph from a benchmark file or use default example
+    If filepath is provided, load from that file
+    If benchmark_name is provided, try to find matching file
+    If use_example=True, use small example graph
+    Otherwise, use default benchmark (graph50-06)
+    """
+    if filepath and os.path.exists(filepath):
+        # Load from provided filepath
+        if filepath.endswith('.txt'):
+            edges, vertices = read_graph_from_txt(filepath)
+        elif filepath.endswith('.xlsx'):
+            edges, vertices = read_graph_from_xlsx(filepath)
+        else:
+            print(f"Unsupported file type: {filepath}")
+            return load_default_benchmark()
+        
+        G = nx.Graph()
+        G.add_edges_from(edges)
+        print(f"Loaded benchmark: {os.path.basename(filepath)}")
+        print(f"  Vertices: {len(vertices)}, Edges: {len(edges)}")
+        return G
+    
+    elif benchmark_name:
+        # Try to find benchmark file
+        benchmark_dir = os.path.join(os.path.dirname(__file__), 'Benchamarks-20251129', 'Benchamarks')
+        if os.path.exists(benchmark_dir):
+            # Search for matching file
+            txt_files = glob.glob(os.path.join(benchmark_dir, f'*{benchmark_name}*.txt'))
+            xlsx_files = glob.glob(os.path.join(benchmark_dir, f'*{benchmark_name}*.xlsx'))
+            all_files = txt_files + xlsx_files
+            
+            if all_files:
+                filepath = all_files[0]
+                if filepath.endswith('.txt'):
+                    edges, vertices = read_graph_from_txt(filepath)
+                else:
+                    edges, vertices = read_graph_from_xlsx(filepath)
+                
+                G = nx.Graph()
+                G.add_edges_from(edges)
+                print(f"Loaded benchmark: {os.path.basename(filepath)}")
+                print(f"  Vertices: {len(vertices)}, Edges: {len(edges)}")
+                return G
+    
+    if use_example:
+        # Use small example graph
+        print("Using simple example graph (18 vertices)")
+        return create_example_graph()
+    
+    # Default: use real benchmark
+    return load_default_benchmark()
+
+
+def load_default_benchmark():
+    """Load default benchmark (graph50-06)"""
+    benchmark_dir = os.path.join(os.path.dirname(__file__), 'Benchamarks-20251129', 'Benchamarks')
+    default_file = os.path.join(benchmark_dir, 'graph50-06.xlsx')
+    
+    if os.path.exists(default_file):
+        edges, vertices = read_graph_from_xlsx(default_file)
+        G = nx.Graph()
+        G.add_edges_from(edges)
+        print(f"Using default benchmark: graph50-06.xlsx")
+        print(f"  Vertices: {len(vertices)}, Edges: {len(edges)}")
+        return G
+    else:
+        # Fallback to example if benchmark not found
+        print("Default benchmark not found, using simple example graph")
+        return create_example_graph()
 
 
 def create_example_graph():
@@ -214,24 +337,33 @@ def visualize_step(step, ax, pos, G_original):
     remaining_vertices = step['remaining_vertices']
     vertex_cover = step['vertex_cover']
     
-    # Create NetworkX graph from current state
+    # Create NetworkX graph from current state - ONLY remaining vertices
     G_current = nx.Graph()
     for v, neighbors in graph_state.items():
-        for n in neighbors:
-            if n in remaining_vertices and v in remaining_vertices:
-                G_current.add_edge(v, n)
+        if v in remaining_vertices:
+            for n in neighbors:
+                if n in remaining_vertices:
+                    G_current.add_edge(v, n)
     
-    # Add isolated vertices
+    # Add isolated vertices that are still remaining
     for v in remaining_vertices:
         if v not in G_current:
             G_current.add_node(v)
     
-    # Determine vertex colors
+    # Only visualize remaining vertices (removed nodes are not shown)
+    if len(G_current.nodes()) == 0:
+        ax.text(0.5, 0.5, 'All vertices removed\nAlgorithm complete', 
+                ha='center', va='center', fontsize=16, transform=ax.transAxes)
+        ax.axis('off')
+        return
+    
+    # Create position for remaining vertices only
+    pos_current = {v: pos[v] for v in G_current.nodes() if v in pos}
+    
+    # Determine vertex colors (only for remaining vertices)
     node_colors = []
-    for node in G_original.nodes():
-        if node not in remaining_vertices:
-            node_colors.append(COLOR_VERTEX_REMOVED)
-        elif node in vertex_cover:
+    for node in G_current.nodes():
+        if node in vertex_cover:
             node_colors.append(COLOR_VERTEX_SELECTED)
         elif step['action'] == 'leaf_neighbor' and node == step.get('leaf'):
             node_colors.append(COLOR_VERTEX_LEAF)
@@ -240,23 +372,21 @@ def visualize_step(step, ax, pos, G_original):
         else:
             node_colors.append(COLOR_VERTEX_NORMAL)
     
-    # Determine edge colors
+    # Determine edge colors (only for remaining edges)
     edge_colors = []
-    for edge in G_original.edges():
+    for edge in G_current.edges():
         u, v = edge
-        if u not in remaining_vertices or v not in remaining_vertices:
-            edge_colors.append(COLOR_EDGE_REMOVED)
-        elif u in vertex_cover or v in vertex_cover:
+        if u in vertex_cover or v in vertex_cover:
             edge_colors.append(COLOR_EDGE_COVERED)
         else:
             edge_colors.append(COLOR_EDGE_NORMAL)
     
-    # Draw graph
-    nx.draw_networkx_nodes(G_original, pos, node_color=node_colors, 
+    # Draw graph - only remaining vertices and edges
+    nx.draw_networkx_nodes(G_current, pos_current, node_color=node_colors, 
                           node_size=800, ax=ax, alpha=0.9)
-    nx.draw_networkx_edges(G_original, edgelist=list(G_original.edges()),
-                          pos=pos, edge_color=edge_colors, width=2, ax=ax, alpha=0.6)
-    nx.draw_networkx_labels(G_original, pos, ax=ax, font_size=10, font_weight='bold')
+    nx.draw_networkx_edges(G_current, edgelist=list(G_current.edges()),
+                          pos=pos_current, edge_color=edge_colors, width=2, ax=ax, alpha=0.6)
+    nx.draw_networkx_labels(G_current, pos_current, ax=ax, font_size=10, font_weight='bold')
     
     # Add title with step information
     phase_names = {1: "Phase 1: Leaf-Neighbor Removal", 
@@ -274,24 +404,32 @@ def visualize_step(step, ax, pos, G_original):
     ax.set_title(title, fontsize=14, fontweight='bold', pad=20)
     ax.axis('off')
     
-    # Add legend
+    # Add legend (removed nodes/edges are not shown, so remove from legend)
     legend_elements = [
         mpatches.Patch(color=COLOR_VERTEX_NORMAL, label='Normal Vertex'),
         mpatches.Patch(color=COLOR_VERTEX_LEAF, label='Leaf (degree 1)'),
         mpatches.Patch(color=COLOR_VERTEX_SELECTED, label='In Vertex Cover'),
-        mpatches.Patch(color=COLOR_VERTEX_REMOVED, label='Removed'),
         mpatches.Patch(color=COLOR_EDGE_COVERED, label='Covered Edge'),
-        mpatches.Patch(color=COLOR_EDGE_REMOVED, label='Removed Edge'),
     ]
     ax.legend(handles=legend_elements, loc='upper left', fontsize=8)
 
 
-def create_animation():
+def create_animation(filepath=None, benchmark_name=None, use_example=False, max_vertices=100):
     """Create animated visualization"""
     print("Creating step-by-step visualization...")
     
-    # Create example graph
-    G = create_example_graph()
+    # Load graph (from benchmark or default)
+    G = load_benchmark_graph(filepath=filepath, benchmark_name=benchmark_name, use_example=use_example)
+    
+    # Check graph size
+    n = len(G.nodes())
+    if n > max_vertices:
+        print(f"\n⚠ Warning: Graph has {n} vertices (recommended max: {max_vertices})")
+        print(f"   Visualization may be slow for large graphs.")
+        response = input("   Continue anyway? (y/n): ").strip().lower()
+        if response != 'y':
+            print("   Aborted.")
+            return None, [], set()
     
     # Get edges and build graph representation
     edges = list(G.edges())
@@ -360,26 +498,39 @@ def create_animation():
         print("   Saving static images instead...")
         plt.close(fig)
         # Save static images instead
+        output_folder = "benchmark_steps_animation"
+        os.makedirs(output_folder, exist_ok=True)
         for i, step in enumerate(steps):
             fig2, ax2 = plt.subplots(figsize=(14, 10))
             visualize_step(step, ax2, pos, G)
             plt.tight_layout()
-            filename = f"step_{i+1:02d}_phase{step['phase']}.png"
+            filename = os.path.join(output_folder, f"step_{i+1:02d}_phase{step['phase']}.png")
             plt.savefig(filename, dpi=150, bbox_inches='tight')
             print(f"  Saved: {filename}")
             plt.close(fig2)
-        print(f"\n✓ Saved {len(steps)} step visualizations")
+        print(f"\n✓ Saved {len(steps)} step visualizations to {output_folder}/")
         return None, steps, final_cover
     
     return anim, steps, final_cover
 
 
-def create_static_visualization():
+def create_static_visualization(filepath=None, benchmark_name=None, use_example=False, max_vertices=100):
     """Create static step-by-step visualization (saves images)"""
     print("Creating static step-by-step visualization...")
     
-    # Create example graph
-    G = create_example_graph()
+    # Load graph (from benchmark or default)
+    G = load_benchmark_graph(filepath=filepath, benchmark_name=benchmark_name, use_example=use_example)
+    
+    # Check graph size - warn if too large
+    n = len(G.nodes())
+    if n > max_vertices:
+        print(f"\n⚠ Warning: Graph has {n} vertices (recommended max: {max_vertices})")
+        print(f"   Visualization may be slow or unclear for large graphs.")
+        print(f"   Consider using a smaller benchmark or subgraph.")
+        response = input("   Continue anyway? (y/n): ").strip().lower()
+        if response != 'y':
+            print("   Aborted.")
+            return
     
     # Get edges and build graph representation
     edges = list(G.edges())
@@ -392,8 +543,21 @@ def create_static_visualization():
     print(f"Final vertex cover size: {len(final_cover)}")
     print(f"Vertices in cover: {sorted(final_cover)}")
     
-    # Use spring layout
-    pos = nx.spring_layout(G, k=1.5, iterations=50, seed=42)
+    # Determine output folder
+    if use_example:
+        # Simple example goes to simple_example_steps (don't change this)
+        output_folder = "simple_example_steps"
+    else:
+        # Benchmarks go to benchmark_steps folder
+        output_folder = "benchmark_steps"
+    
+    # Create output folder
+    os.makedirs(output_folder, exist_ok=True)
+    print(f"\nSaving steps to: {output_folder}/")
+    
+    # Use spring layout (adjust k based on graph size)
+    k_value = min(1.5, max(0.5, 1.5 * (100 / n)))  # Scale k inversely with size
+    pos = nx.spring_layout(G, k=k_value, iterations=50, seed=42)
     
     # Create figure for each step
     for i, step in enumerate(steps):
@@ -401,12 +565,12 @@ def create_static_visualization():
         visualize_step(step, ax, pos, G)
         plt.tight_layout()
         
-        filename = f"step_{i+1:02d}_phase{step['phase']}.png"
+        filename = os.path.join(output_folder, f"step_{i+1:02d}_phase{step['phase']}.png")
         plt.savefig(filename, dpi=150, bbox_inches='tight')
         print(f"Saved: {filename}")
         plt.close()
     
-    print(f"\nSaved {len(steps)} step visualizations")
+    print(f"\n✓ Saved {len(steps)} step visualizations to {output_folder}/")
 
 
 def demonstrate_complement_graph():
@@ -489,17 +653,54 @@ if __name__ == '__main__':
     print("Leaf-Neighbor Greedy Vertex Cover Algorithm - Visualization")
     print("="*80)
     
-    if len(sys.argv) > 1 and sys.argv[1] == '--static':
-        # Create static images
-        create_static_visualization()
-    elif len(sys.argv) > 1 and sys.argv[1] == '--complement':
+    # Parse arguments
+    filepath = None
+    benchmark_name = None
+    use_example = False
+    mode = 'static'  # default
+    
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == '--static':
+            mode = 'static'
+        elif arg == '--complement':
+            mode = 'complement'
+        elif arg == '--example':
+            use_example = True
+        elif arg == '--file' and i + 1 < len(sys.argv):
+            filepath = sys.argv[i + 1]
+            i += 1
+        elif arg == '--benchmark' and i + 1 < len(sys.argv):
+            benchmark_name = sys.argv[i + 1]
+            i += 1
+        i += 1
+    
+    if mode == 'complement':
         # Show complement graph example
         demonstrate_complement_graph()
+    elif mode == 'static':
+        # Create static images
+        if filepath or benchmark_name:
+            print(f"\nVisualizing benchmark: {filepath or benchmark_name}")
+        elif use_example:
+            print("\nUsing simple example graph (18 vertices)")
+            print("(Use --file <path> or --benchmark <name> to visualize a benchmark)")
+        else:
+            print("\nUsing default benchmark: graph50-06")
+            print("(Use --example for simple example, --file <path> or --benchmark <name> for other benchmarks)")
+        create_static_visualization(filepath=filepath, benchmark_name=benchmark_name, use_example=use_example)
     else:
         # Create animated visualization
         print("\nCreating animated visualization...")
         print("(Use --static to save images, --complement to see complement example)")
-        anim, steps, cover = create_animation()
+        if filepath or benchmark_name:
+            print(f"Visualizing benchmark: {filepath or benchmark_name}")
+        elif use_example:
+            print("Using simple example graph")
+        else:
+            print("Using default benchmark: graph50-06")
+        anim, steps, cover = create_animation(filepath=filepath, benchmark_name=benchmark_name, use_example=use_example)
         
         if anim is not None:
             # Keep animation running
