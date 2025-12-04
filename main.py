@@ -422,7 +422,7 @@ def find_matching_file(benchmark_name, all_files):
 
 
 def update_result_txt(benchmark_results, benchmarks):
-    """Update result.txt with new format: Benchmarks | |V| | Optimal MVC | τ(G) | α(G) | ω(G) | t"""
+    """Update result.txt with new format: Benchmarks | |V| | Optimal MVC | τ(G) | R | α(G) | ω(G) | t"""
     result_file = os.path.join(os.path.dirname(__file__), 'result.txt')
     
     # Create result map
@@ -437,9 +437,9 @@ def update_result_txt(benchmark_results, benchmarks):
     
     # Write new format
     output_lines = []
-    # Header: Benchmarks | |V| | Optimal MVC | τ(G) | α(G) | ω(G) | t
-    output_lines.append("| Benchmarks           | |V| | Optimal MVC | τ(G) | α(G) | ω(G) | t          |\n")
-    output_lines.append("|---------------------|-----|--------------|------|------|------|------------|\n")
+    # Header: Benchmarks | |V| | Optimal MVC | τ(G) | R | α(G) | ω(G) | t
+    output_lines.append("| Benchmarks           | |V| | Optimal MVC | τ(G) | R     | α(G) | ω(G) | t          |\n")
+    output_lines.append("|---------------------|-----|--------------|------|-------|------|------|------------|\n")
     
     # Process each benchmark
     for benchmark in benchmarks:
@@ -453,6 +453,12 @@ def update_result_txt(benchmark_results, benchmarks):
         omega_g = result.get('omega_g', None)
         exec_time = result.get('execution_time', None)
         
+        # Calculate ratio R = τ(G) / Optimal MVC
+        ratio_str = ""
+        if tau_g is not None and opt_mvc is not None and opt_mvc > 0:
+            ratio_value = tau_g / opt_mvc
+            ratio_str = f"{ratio_value:.3f}"
+        
         # Format values
         vertices_str = str(vertices) if vertices else ''
         opt_str = str(opt_mvc) if opt_mvc is not None else ''
@@ -461,13 +467,16 @@ def update_result_txt(benchmark_results, benchmarks):
         omega_str = str(omega_g) if omega_g is not None else ''
         time_str = f"{exec_time:.4f}s" if exec_time is not None else ''
         
-        # Check if this is a red benchmark
+        # Check if this is a red benchmark and clean up name
         is_red = is_red_benchmark(benchmark_name)
-        # Add (red) marker for red benchmarks
-        benchmark_display = f"(red) {benchmark_name}" if is_red else benchmark_name
+        # Add (red) marker for red benchmarks, but keep names clean
+        if is_red:
+            benchmark_display = f"(red) {benchmark_name}"
+        else:
+            benchmark_display = benchmark_name
         
         # Format line
-        output_lines.append(f"| {benchmark_display:<21} | {vertices_str:<3} | {opt_str:<12} | {tau_str:<4} | {alpha_str:<4} | {omega_str:<4} | {time_str:<10} |\n")
+        output_lines.append(f"| {benchmark_display:<21} | {vertices_str:<3} | {opt_str:<12} | {tau_str:<4} | {ratio_str:<5} | {alpha_str:<4} | {omega_str:<4} | {time_str:<10} |\n")
     
     # Write updated file
     with open(result_file, 'w') as f:
